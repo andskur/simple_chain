@@ -1,0 +1,12 @@
+hash: 27df687822d5bd179b6ff8c59caf3a318dfdf34ecac9b60210abcd2677484387
+updated: 2018-12-15T21:49:21.423221+03:00
+imports:
+- name: github.com/davecgh/go-spew
+  version: 8991bc29aa16c548c550c7ff78260e27b9ab7c73
+  subpackages:
+  - spew
+- name: github.com/gorilla/mux
+  version: e3702bed27f0d39777b0b37b664b6280e8ef8fbf
+- name: github.com/joho/godotenv
+  version: 23d116af351c84513e1946b527c88823e476be13
+testImports: []

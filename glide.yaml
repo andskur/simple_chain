@@ -1,0 +1,10 @@
+package: github.com/andskur/hearth_chain
+import:
+- package: github.com/davecgh/go-spew
+  version: ^1.1.1
+  subpackages:
+  - spew
+- package: github.com/gorilla/mux
+  version: ^1.6.2
+- package: github.com/joho/godotenv
+  version: ^1.3.0
