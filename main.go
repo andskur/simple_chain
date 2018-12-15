@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
@@ -32,6 +33,8 @@ type Message struct {
 	BPM int
 }
 
+var mutex = &sync.Mutex{}
+
 func main() {
 	err := godotenv.Load()
 	if err != nil {
@@ -42,7 +45,10 @@ func main() {
 		t := time.Now()
 		genesisBlock := Block{0, t.String(), 0, "", ""}
 		spew.Dump(genesisBlock)
+
+		mutex.Lock()
 		Blockchain = append(Blockchain, genesisBlock)
+		mutex.Unlock()
 	}()
 	log.Fatal(run())
 }
@@ -50,8 +56,8 @@ func main() {
 // Webserver implementation
 func run() error {
 	mux := makeMuxRouter()
-	httpAddr := os.Getenv("ADDR")
-	log.Println("Listening on ", os.Getenv("ADDR"))
+	httpAddr := os.Getenv("PORT")
+	log.Println("Listening on ", os.Getenv("PORT"))
 
 	s := &http.Server{
 		Addr:           ":" + httpAddr,
@@ -99,6 +105,7 @@ func handleWriteBLock(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
+	mutex.Lock()
 	newBlock, err := generateBlock(Blockchain[len(Blockchain)-1], m.BPM)
 	if err != nil {
 		respondWithJSON(w, r, http.StatusInternalServerError, m)
@@ -110,6 +117,7 @@ func handleWriteBLock(w http.ResponseWriter, r *http.Request) {
 		replaceChain(newBlockchain)
 		spew.Dump(Blockchain)
 	}
+	mutex.Unlock()
 
 	respondWithJSON(w, r, http.StatusCreated, newBlock)
 }
@@ -140,7 +148,7 @@ func generateBlock(oldBlock Block, BPM int) (Block, error) {
 	return newBlock, nil
 }
 
-// Validate Block
+// make sure block is valid by checking index, and comparing the hash of the previous block
 func isBlockValid(newBlock, oldBlock Block) bool {
 	if oldBlock.Index+1 != newBlock.Index {
 		return false
@@ -157,14 +165,14 @@ func isBlockValid(newBlock, oldBlock Block) bool {
 	return true
 }
 
-// Accept new chain to blockchain
+// make sure the chain we're checking is longer than the current blockchain
 func replaceChain(newBlocks []Block) {
 	if len(newBlocks) > len(Blockchain) {
 		Blockchain = newBlocks
 	}
 }
 
-// Calculate Block sha256 hash
+// calculate Block sha256 hash
 func calculateHash(block Block) string {
 	record := string(block.Index) + block.Timestamp + string(block.BPM) + block.PrevHash
 
