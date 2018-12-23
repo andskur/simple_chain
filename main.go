@@ -53,6 +53,8 @@ func main() {
 		log.Fatal(err)
 	}
 
+	startBlockchain()
+
 	startHttpCmd := flag.NewFlagSet("starthttp", flag.ExitOnError)
 	startTcpCmd := flag.NewFlagSet("starttcp", flag.ExitOnError)
 
@@ -73,24 +75,17 @@ func main() {
 	}
 
 	if startHttpCmd.Parsed() {
-		startHttp()
+		go log.Fatal(runHttpServer())
 	}
 	if startTcpCmd.Parsed() {
-		startTcp()
+		runTcpServer()
 	}
 
 }
 
 // Start TCP server
-func startTcp() {
+func runTcpServer() {
 	bcServer = make(chan []Block)
-
-	t := time.Now()
-	genesisBlock := Block{}
-	genesisBlock = Block{0, t.String(), 0, calculateHash(genesisBlock), "", difficulty, ""}
-
-	spew.Dump(genesisBlock)
-	Blockchain = append(Blockchain, genesisBlock)
 
 	// start TCP and serve TCP server
 	server, err := net.Listen("tcp", ":"+os.Getenv("PORT"))
@@ -108,6 +103,7 @@ func startTcp() {
 	}
 }
 
+// handle incoming connection
 func handleConn(conn net.Conn) {
 	defer conn.Close()
 
@@ -156,21 +152,6 @@ func handleConn(conn net.Conn) {
 	}
 }
 
-// Start HTTP server
-func startHttp() {
-	go func() {
-		t := time.Now()
-		genesisBlock := Block{}
-		genesisBlock = Block{0, t.String(), 0, calculateHash(genesisBlock), "", difficulty, ""}
-		spew.Dump(genesisBlock)
-
-		mutex.Lock()
-		Blockchain = append(Blockchain, genesisBlock)
-		mutex.Unlock()
-	}()
-	log.Fatal(runHttpServer())
-}
-
 // Webserver implementation
 func runHttpServer() error {
 	mux := makeMuxRouter()
@@ -201,7 +182,7 @@ func makeMuxRouter() http.Handler {
 	return muxRouter
 }
 
-// write blockchain when we receive an http request
+// get all blocks in blockchain
 func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
 	bytes, err := json.MarshalIndent(Blockchain, "", "  ")
 	if err != nil {
@@ -212,7 +193,7 @@ func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, string(bytes))
 }
 
-// takes JSON payload as an input for heart rate (BPM)
+// write blockchain when we receive an http request
 func handleWriteBLock(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var m Message
@@ -241,6 +222,7 @@ func handleWriteBLock(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, r, http.StatusCreated, newBlock)
 }
 
+// takes JSON payload as an input for heart rate (BPM)
 func respondWithJSON(w http.ResponseWriter, r *http.Request, code int, payload interface{}) {
 	response, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
@@ -279,6 +261,15 @@ func generateBlock(oldBlock Block, BPM int) (Block, error) {
 	}
 
 	return newBlock, nil
+}
+
+// generate genesis block
+func generateGenesis() Block {
+	t := time.Now()
+	genesisBlock := Block{}
+	genesisBlock = Block{0, t.String(), 0, calculateHash(genesisBlock), "", difficulty, ""}
+
+	return genesisBlock
 }
 
 // make sure block is valid by checking index, and comparing the hash of the previous block
@@ -323,4 +314,14 @@ func isHashValid(hash string, difficulty int) bool {
 	prefix := strings.Repeat("0", difficulty)
 
 	return strings.HasPrefix(hash, prefix)
+}
+
+// start new blockchain with genesis block
+func startBlockchain() {
+	genesisBlock := generateGenesis()
+	spew.Dump(genesisBlock)
+
+	mutex.Lock()
+	Blockchain = append(Blockchain, genesisBlock)
+	mutex.Unlock()
 }
