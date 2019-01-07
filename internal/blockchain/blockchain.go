@@ -48,13 +48,14 @@ func GenerateBlock(oldBlock Block, BPM int) (Block, error) {
 	for i := 0; ; i++ {
 		hexd := fmt.Sprintf("%x", i)
 		newBlock.Nonce = hexd
-		if !IsHashValid(CalculateHash(newBlock), newBlock.Difficulty) {
-			fmt.Println(CalculateHash(newBlock), " do more work!")
+		hash := newBlock.CalculateHash()
+		if !IsHashValid(hash, newBlock.Difficulty) {
+			fmt.Println(hash, " do more work!")
 			time.Sleep(time.Second)
 			continue
 		} else {
-			fmt.Println(CalculateHash(newBlock), " work done!")
-			newBlock.Hash = CalculateHash(newBlock)
+			fmt.Println(hash, " work done!")
+			newBlock.Hash = hash
 			break
 		}
 	}
@@ -66,23 +67,23 @@ func GenerateBlock(oldBlock Block, BPM int) (Block, error) {
 func GenerateGenesis() Block {
 	t := time.Now()
 	genesisBlock := Block{}
-	genesisBlock = Block{0, t.String(), 0, CalculateHash(genesisBlock), "", difficulty, ""}
+	genesisBlock = Block{0, t.String(), 0, genesisBlock.CalculateHash(), "", difficulty, ""}
 
 	return genesisBlock
 }
 
 // make sure block is valid by checking index,
 // and comparing the hash of the previous block
-func IsBlockValid(newBlock, oldBlock Block) bool {
-	if oldBlock.Index+1 != newBlock.Index {
+func (block *Block) IsBlockValid(oldBlock Block) bool {
+	if oldBlock.Index+1 != block.Index {
 		return false
 	}
 
-	if oldBlock.Hash != newBlock.PrevHash {
+	if oldBlock.Hash != block.PrevHash {
 		return false
 	}
 
-	if CalculateHash(newBlock) != newBlock.Hash {
+	if block.CalculateHash() != block.Hash {
 		return false
 	}
 
@@ -90,7 +91,7 @@ func IsBlockValid(newBlock, oldBlock Block) bool {
 }
 
 // calculate Block sha256 hash
-func CalculateHash(block Block) string {
+func (block *Block) CalculateHash() string {
 	record := strconv.Itoa(block.Index) + block.Timestamp + strconv.Itoa(block.BPM) + block.PrevHash + block.Nonce
 
 	h := sha256.New()
@@ -136,7 +137,7 @@ func (chain *Blockchain) AddBlock(BPM int) (newBlock Block, err error) {
 	}
 
 	// validate new block
-	if IsBlockValid(newBlock, chain.Blocks[len(chain.Blocks)-1]) {
+	if newBlock.IsBlockValid(chain.Blocks[len(chain.Blocks)-1]) {
 		mutex.Lock()
 		chain.Blocks = append(chain.Blocks, newBlock)
 		mutex.Unlock()
