@@ -9,11 +9,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"gx/ipfs/QmNiJiXwWE3kRhZrC5ej3kSjWHm337pYfhjLGSCDNKJP2s/go-libp2p-crypto"
 	"io"
 	"log"
 	mrand "math/rand"
-	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -57,8 +55,6 @@ type Message struct {
 	BPM int
 }
 
-// bcServer handles incoming concurrent Blocks
-var bcServer chan []Block
 var mutex = &sync.Mutex{}
 
 func main() {
@@ -67,135 +63,38 @@ func main() {
 		log.Fatal(err)
 	}
 
+	listenF := flag.Int("l", 0, "wait for incoming conections")
+	target := flag.String("d", "", "target peer to dial")
+	secio := flag.Bool("secio", false, "enable secio")
+	seed := flag.Int64("seed", 0, "set random seed for id generation")
+	startHttp := flag.Bool("http", false, "start http server")
+	flag.Parse()
+
 	startBlockchain()
 
-	runP2Pserver()
-
-	//startHttpCmd := flag.NewFlagSet("starthttp", flag.ExitOnError)
-	//startTcpCmd := flag.NewFlagSet("starttcp", flag.ExitOnError)
-	//startP2P := flag.NewFlagSet("startp2p", flag.ExitOnError)
-	//
-	//switch os.Args[1] {
-	//case "starthttp":
-	//	err := startHttpCmd.Parse(os.Args[2:])
-	//	if err != nil {
-	//		log.Fatal(err)
-	//	}
-	//case "starttcp":
-	//	err := startTcpCmd.Parse(os.Args[2:])
-	//	if err != nil {
-	//		log.Fatal(err)
-	//	}
-	//case "startp2p":
-	//	err := startP2P.Parse(os.Args[2:])
-	//	if err != nil {
-	//		log.Fatal(err)
-	//	}
-	//default:
-	//	fmt.Println("Invalid arguments")
-	//	os.Exit(1)
-	//}
-	//
-	//if startHttpCmd.Parsed() {
-	//	go log.Fatal(runHttpServer())
-	//}
-	//if startTcpCmd.Parsed() {
-	//	runTcpServer()
-	//}
-	//if startP2P.Parsed() {
-	//	runP2Pserver()
-	//}
-
-}
-
-// Start TCP server
-func runTcpServer() {
-	bcServer = make(chan []Block)
-
-	// start TCP and serve TCP server
-	server, err := net.Listen("tcp", ":"+os.Getenv("PORT"))
-	if err != nil {
-		log.Fatal(err)
+	if *startHttp {
+		runHttpServer()
 	}
-	defer server.Close()
 
-	for {
-		conn, err := server.Accept()
-		if err != nil {
-			log.Fatal(err)
-		}
-		go handleConn(conn)
-	}
-}
-
-// handle incoming connection
-func handleConn(conn net.Conn) {
-	defer conn.Close()
-
-	io.WriteString(conn, "Enter a new BPM:")
-
-	scanner := bufio.NewScanner(conn)
-
-	// take in BPM from stdin and add it to blockchain after conducting necessary validations
-	go func() {
-		for scanner.Scan() {
-			bpm, err := strconv.Atoi(scanner.Text())
-			if err != nil {
-				log.Printf("%v not a number: %v", scanner.Text(), err)
-				continue
-			}
-			newBlock, err := generateBlock(Blockchain[len(Blockchain)-1], bpm)
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-			if isBlockValid(newBlock, Blockchain[len(Blockchain)-1]) {
-				newBlockchain := append(Blockchain, newBlock)
-				replaceChain(newBlockchain)
-			}
-
-			bcServer <- Blockchain
-			io.WriteString(conn, "\nEnter a new BPM:")
-		}
-	}()
-
-	// receiving broadcast
-	go func() {
-		for {
-			time.Sleep(30 * time.Second)
-			output, err := json.Marshal(Blockchain)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			io.WriteString(conn, string(output))
-		}
-	}()
-
-	for _ = range bcServer {
-		spew.Dump(Blockchain)
-	}
+	runP2Pserver(*listenF, *target, *secio, *seed)
 }
 
 // Webserver implementation
-func runHttpServer() error {
-	mux := makeMuxRouter()
-	httpAddr := os.Getenv("PORT")
-	log.Println("Listening on ", os.Getenv("PORT"))
+func runHttpServer() {
+	go func() {
+		mux := makeMuxRouter()
+		httpAddr := os.Getenv("PORT")
+		log.Println("Listening on ", os.Getenv("PORT"))
 
-	s := &http.Server{
-		Addr:           ":" + httpAddr,
-		Handler:        mux,
-		ReadTimeout:    10 * time.Second,
-		WriteTimeout:   10 * time.Second,
-		MaxHeaderBytes: 1 << 20,
-	}
-
-	if err := s.ListenAndServe(); err != nil {
-		return err
-	}
-
-	return nil
+		s := &http.Server{
+			Addr:           ":" + httpAddr,
+			Handler:        mux,
+			ReadTimeout:    10 * time.Second,
+			WriteTimeout:   10 * time.Second,
+			MaxHeaderBytes: 1 << 20,
+		}
+		s.ListenAndServe()
+	}()
 }
 
 // Create Handler
@@ -354,7 +253,7 @@ func startBlockchain() {
 /// LibP2P stuff
 
 // Start P2P Blockchain
-func runP2Pserver() {
+func runP2Pserver(listenF int, target string, secio bool, seed int64) {
 
 	// LibP2P code uses golog to log messages. They log with different
 	// string IDs (i.e. "swarm"). We can control the verbosity level for
@@ -362,23 +261,23 @@ func runP2Pserver() {
 	golog.SetAllLoggers(gologging.INFO)
 
 	// Parse options from the command line
-	listenF := flag.Int("l", 0, "wait for incoming conections")
+	/*listenF := flag.Int("l", 0, "wait for incoming conections")
 	target := flag.String("d", "", "target peer to dial")
 	secio := flag.Bool("secio", false, "enable secio")
 	seed := flag.Int64("seed", 0, "set random seed for id generation")
-	flag.Parse()
+	flag.Parse()*/
 
-	if *listenF == 0 {
+	if listenF == 0 {
 		log.Fatal("Please provide a port to bind on with -l")
 	}
 
 	// Make a host that listens on the given multiaddress
-	ha, err := makeBasicHost(*listenF, *secio, *seed)
+	ha, err := makeBasicHost(listenF, secio, seed)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if *target == "" {
+	if target == "" {
 		log.Println("listening for connections...")
 		// Set a stream handler on host A. /p2p/1.0.0 is
 		// a user-defined protocol name.
@@ -391,7 +290,7 @@ func runP2Pserver() {
 
 		// The following code extracts target's peer ID from the
 		// given multiaddress
-		ipfsaddr, err := ma.NewMultiaddr(*target)
+		ipfsaddr, err := ma.NewMultiaddr(target)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -453,7 +352,7 @@ func makeBasicHost(listenPort int, secio bool, randseed int64) (host.Host, error
 
 	// Generate a key pair for this host. We will use it
 	// to obtain a valid host ID.
-	priv, _, err := cryptop2p.GenerateKeyPairWithReader(crypto.RSA, 2048, r)
+	priv, _, err := cryptop2p.GenerateKeyPairWithReader(cryptop2p.RSA, 2048, r)
 	if err != nil {
 		return nil, err
 	}
