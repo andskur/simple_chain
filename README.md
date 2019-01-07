@@ -1,3 +1,3 @@
 # Simple blockchain
 
-Simple POW blockchain for experimentation
+Simple libp2p blockchain for experimentation
