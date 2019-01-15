@@ -11,15 +11,13 @@ import (
 	"github.com/andskur/simple_chain/internal/network"
 )
 
-var (
-	Chain = &blockchain.Blockchain{}
-)
-
 func main() {
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	Chain := &blockchain.Blockchain{}
 
 	listenF := flag.Int("l", 0, "wait for incoming conections")
 	target := flag.String("d", "", "target peer to dial")
@@ -28,11 +26,12 @@ func main() {
 	startHttp := flag.Bool("http", false, "start http server")
 	flag.Parse()
 
-	Chain.StartBlockchain()
-
 	if *startHttp {
-		httpserver.RunHttpServer(Chain)
+		go httpserver.RunHttpServer(Chain)
 	}
 
-	network.RunP2Pserver(Chain, *listenF, *target, *secio, *seed)
+	err = network.RunP2Pserver(Chain, *listenF, *target, *secio, *seed)
+	if err != nil {
+		log.Fatal(err)
+	}
 }

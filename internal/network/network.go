@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -38,7 +39,10 @@ type P2pNetwork struct {
 }
 
 // Start P2P Blockchain
-func RunP2Pserver(chain *blockchain.Blockchain, listenF int, target string, secio bool, seed int64) {
+func RunP2Pserver(chain *blockchain.Blockchain, listenF int, target string, secio bool, seed int64) error {
+
+	chain.StartBlockchain()
+
 	net := P2pNetwork{chain}
 
 	// LibP2P code uses golog to log messages. They log with different
@@ -47,13 +51,13 @@ func RunP2Pserver(chain *blockchain.Blockchain, listenF int, target string, seci
 	golog.SetAllLoggers(gologging.INFO)
 
 	if listenF == 0 {
-		log.Fatal("Please provide a port to bind on with -l")
+		return errors.New("please provide a port to bind on with -l")
 	}
 
 	// Make a host that listens on the given multiaddress
 	ha, err := net.makeBasicHost(listenF, secio, seed)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	if target == "" {
@@ -71,17 +75,17 @@ func RunP2Pserver(chain *blockchain.Blockchain, listenF int, target string, seci
 		// given multiaddress
 		ipfsaddr, err := ma.NewMultiaddr(target)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 
 		pid, err := ipfsaddr.ValueForProtocol(ma.P_IPFS)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 
 		peerid, err := peer.IDB58Decode(pid)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 
 		// Decapsulate the /ipfs/<peerID> part from the target
@@ -101,7 +105,7 @@ func RunP2Pserver(chain *blockchain.Blockchain, listenF int, target string, seci
 		// we use the same /p2p/1.0.0 protocol
 		s, err := ha.NewStream(context.Background(), peerid, "/p2p/1.0.0")
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 		// Create a buffered stream so that read and writes are non blocking.
 		rw := bufio.NewReadWriter(bufio.NewReader(s), bufio.NewWriter(s))
@@ -184,10 +188,12 @@ func (net *P2pNetwork) handleStream(s netp2p.Stream) {
 }
 
 func (net *P2pNetwork) readData(rw *bufio.ReadWriter) {
+READ:
 	for {
 		str, err := rw.ReadString('\n')
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
+			break READ
 		}
 
 		if str == "" {
@@ -197,7 +203,7 @@ func (net *P2pNetwork) readData(rw *bufio.ReadWriter) {
 
 			chain := make([]blockchain.Block, 0)
 			if err := json.Unmarshal([]byte(str), &chain); err != nil {
-				log.Fatal(err)
+				log.Println(err)
 			}
 
 			mutex.Lock()
@@ -205,7 +211,7 @@ func (net *P2pNetwork) readData(rw *bufio.ReadWriter) {
 				net.Chain.Blocks = chain
 				bytes, err := json.MarshalIndent(net.Chain.Blocks, "", " ")
 				if err != nil {
-					log.Fatal(err)
+					log.Println(err)
 				}
 				// Green console color: 	\x1b[32m
 				// Reset console color: 	\x1b[0m
@@ -218,6 +224,7 @@ func (net *P2pNetwork) readData(rw *bufio.ReadWriter) {
 
 func (net *P2pNetwork) writeData(rw *bufio.ReadWriter) {
 	go func() {
+	WRITE:
 		for {
 			time.Sleep(5 * time.Second)
 			mutex.Lock()
@@ -230,11 +237,11 @@ func (net *P2pNetwork) writeData(rw *bufio.ReadWriter) {
 			mutex.Lock()
 			_, err = rw.WriteString(fmt.Sprintf("%s\n", string(bytes)))
 			if err != nil {
-				log.Println(err)
+				break WRITE
 			}
 			err = rw.Flush()
 			if err != nil {
-				log.Println(err)
+				break WRITE
 			}
 			mutex.Unlock()
 		}

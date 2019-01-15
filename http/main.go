@@ -7,15 +7,12 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
 
 	"github.com/andskur/simple_chain/internal/blockchain"
 )
-
-var mutex = &sync.Mutex{}
 
 // Message takes incoming JSON payload for writing heart rate
 type Message struct {
@@ -29,21 +26,19 @@ type Handlers struct {
 
 // Webserver implementation
 func RunHttpServer(chain *blockchain.Blockchain) {
-	go func() {
-		fmt.Println("Starting http server")
-		mux := MakeMuxRouter(chain)
-		httpAddr := os.Getenv("PORT")
-		log.Println("Listening on ", os.Getenv("PORT"))
+	fmt.Println("Starting http server")
+	mux := MakeMuxRouter(chain)
+	httpAddr := os.Getenv("PORT")
+	log.Println("Listening on ", os.Getenv("PORT"))
 
-		s := &http.Server{
-			Addr:           ":" + httpAddr,
-			Handler:        mux,
-			ReadTimeout:    10 * time.Second,
-			WriteTimeout:   10 * time.Second,
-			MaxHeaderBytes: 1 << 20,
-		}
-		s.ListenAndServe()
-	}()
+	s := &http.Server{
+		Addr:           ":" + httpAddr,
+		Handler:        mux,
+		ReadTimeout:    10 * time.Second,
+		WriteTimeout:   10 * time.Second,
+		MaxHeaderBytes: 1 << 20,
+	}
+	s.ListenAndServe()
 }
 
 // Create Handler
